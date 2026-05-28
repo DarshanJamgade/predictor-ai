@@ -1,14 +1,6 @@
-from sklearn.ensemble import RandomForestClassifier
 from typing import Any, Optional
 
 from core.config import get_settings
-from ml.fundamentals import score_fundamentals
-from ml.indicators import calculate_indicators, compute_trend_strength, get_indicator_snapshot
-from ml.patterns import collect_pattern_analysis
-from ml.recommendation import generate_recommendation
-from ml.trade_levels import compute_trade_levels
-from services.data_service import download_history
-
 
 ML_FEATURES = [
     "RSI",
@@ -24,14 +16,41 @@ ML_FEATURES = [
 ]
 
 
-def _train_probability(df) -> Optional[float]:
-    for feature in ML_FEATURES:
-        if feature not in df.columns:
-            return None
+def _heuristic_probability(latest) -> float:
+    """Indicator-based probability when scikit-learn is unavailable (e.g. Vercel)."""
+    score = 0.5
 
-    df = df.copy()
-    df["Target_Dir"] = (df["Close"].shift(-5) > df["Close"]).astype(int)
-    train_df = df.dropna().copy()
+    rsi = float(latest.get("RSI", 50) or 50)
+    if rsi < 35:
+        score += 0.12
+    elif rsi > 65:
+        score -= 0.12
+
+    macd = float(latest.get("MACD", 0) or 0)
+    macd_signal = float(latest.get("MACD_Signal", 0) or 0)
+    score += 0.1 if macd > macd_signal else -0.1
+
+    close = float(latest.get("Close", 0))
+    sma50 = float(latest.get("SMA_50", close) or close)
+    sma200 = float(latest.get("SMA_200", close) or close)
+    if close > sma50 > sma200:
+        score += 0.08
+    elif close < sma50 < sma200:
+        score -= 0.08
+
+    adx = float(latest.get("ADX", 0) or 0)
+    if adx > 25 and macd > macd_signal:
+        score += 0.05
+
+    return max(0.05, min(0.95, score))
+
+
+def _train_probability_rf(df) -> Optional[float]:
+    from sklearn.ensemble import RandomForestClassifier
+
+    work = df.copy()
+    work["Target_Dir"] = (work["Close"].shift(-5) > work["Close"]).astype(int)
+    train_df = work.dropna().copy()
 
     if len(train_df) < 50:
         return None
@@ -44,11 +63,25 @@ def _train_probability(df) -> Optional[float]:
     model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=8)
     model.fit(train[ML_FEATURES], train["Target_Dir"])
 
-    latest = df[ML_FEATURES].tail(1)
+    latest = work[ML_FEATURES].tail(1)
     proba = model.predict_proba(latest)
     if proba.shape[1] < 2:
         return 0.5
     return float(proba[0][1])
+
+
+def _train_probability(df) -> Optional[float]:
+    for feature in ML_FEATURES:
+        if feature not in df.columns:
+            return None
+
+    try:
+        return _train_probability_rf(df)
+    except ImportError:
+        latest = df.dropna().tail(1)
+        if latest.empty:
+            return None
+        return _heuristic_probability(latest.iloc[0])
 
 
 def get_prediction(
@@ -57,6 +90,13 @@ def get_prediction(
     fundamentals: Optional[dict[str, Any]] = None,
 ) -> Optional[dict[str, Any]]:
     """Advanced AI prediction with multi-factor recommendation engine."""
+    from ml.fundamentals import score_fundamentals
+    from ml.indicators import calculate_indicators, compute_trend_strength, get_indicator_snapshot
+    from ml.patterns import collect_pattern_analysis
+    from ml.recommendation import generate_recommendation
+    from ml.trade_levels import compute_trade_levels
+    from services.data_service import download_history
+
     try:
         settings = get_settings()
         df = download_history(ticker, period="2y", interval="1d")

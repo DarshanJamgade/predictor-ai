@@ -1,25 +1,16 @@
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
-from ml.engine import get_prediction
-from ml.sentiment import get_sentiment
 from services.cache import TTLCache
-from services.data_service import (
-    compute_day_change,
-    fetch_chart_history,
-    get_currency_meta,
-    map_fundamentals,
-    resolve_ticker,
-)
 
 settings = get_settings()
 app = FastAPI(title="AI Stock Predictor API", version="2.0.0")
 cache = TTLCache(ttl_seconds=settings["cache_ttl_seconds"])
-executor = ThreadPoolExecutor(max_workers=4)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +23,16 @@ app.add_middleware(
 
 
 def _build_stock_payload(ticker: str) -> dict:
+    from ml.engine import get_prediction
+    from ml.sentiment import get_sentiment
+    from services.data_service import (
+        compute_day_change,
+        fetch_chart_history,
+        get_currency_meta,
+        map_fundamentals,
+        resolve_ticker,
+    )
+
     info, final_ticker = resolve_ticker(ticker)
     if not info or not final_ticker:
         raise HTTPException(
@@ -121,10 +122,7 @@ async def get_stock_data(ticker: str):
         return cached
 
     try:
-        import asyncio
-
-        loop = asyncio.get_event_loop()
-        payload = await loop.run_in_executor(executor, _build_stock_payload, ticker)
+        payload = await asyncio.to_thread(_build_stock_payload, ticker)
         cache.set(cache_key, payload)
         return payload
     except HTTPException:
