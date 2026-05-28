@@ -1,67 +1,108 @@
+"""News sentiment from yfinance headlines."""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
 import yfinance as yf
-from transformers import pipeline
-import torch
 
-# Initialize the sentiment pipeline with FinBERT
-try:
-    sentiment_pipeline = pipeline(
-        "sentiment-analysis", 
-        model="ProsusAI/finbert",
-        device=0 if torch.cuda.is_available() else -1
-    )
-except Exception as e:
-    print(f"Warning: Could not load FinBERT model: {e}")
-    sentiment_pipeline = None
+_vader_analyzer = None
+_finbert_pipeline = None
+_finbert_failed = False
 
-def get_sentiment(ticker):
-    """Fetch news and analyze sentiment using FinBERT with robust key checking."""
-    if sentiment_pipeline is None:
-        return {"score": 0, "label": "Neutral", "headlines": []}
 
+def _sentiment_backend() -> str:
+    return os.getenv("SENTIMENT_BACKEND", "vader").lower()
+
+
+def _get_vader():
+    global _vader_analyzer
+    if _vader_analyzer is None:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+        _vader_analyzer = SentimentIntensityAnalyzer()
+    return _vader_analyzer
+
+
+def _get_finbert():
+    global _finbert_pipeline, _finbert_failed
+    if _finbert_failed:
+        return None
+    if _finbert_pipeline is None:
+        try:
+            from transformers import pipeline
+            import torch
+
+            _finbert_pipeline = pipeline(
+                "sentiment-analysis",
+                model="ProsusAI/finbert",
+                device=0 if torch.cuda.is_available() else -1,
+            )
+        except Exception as exc:
+            print(f"Warning: Could not load FinBERT model: {exc}")
+            _finbert_failed = True
+            return None
+    return _finbert_pipeline
+
+
+def _extract_headlines(ticker: str) -> list[str]:
+    stock = yf.Ticker(ticker)
+    news = stock.news[:5]
+    headlines: list[str] = []
+    for item in news:
+        title = item.get("title") or item.get("text") or ""
+        if title:
+            headlines.append(title)
+    return headlines
+
+
+def _label_from_score(score: float) -> str:
+    if score > 0.2:
+        return "Positive"
+    if score < -0.2:
+        return "Negative"
+    return "Neutral"
+
+
+def _analyze_vader(headlines: list[str]) -> dict[str, Any]:
+    analyzer = _get_vader()
+    scores = [analyzer.polarity_scores(headline)["compound"] for headline in headlines]
+    score = sum(scores) / len(scores) if scores else 0.0
+    return {
+        "score": round(score, 2),
+        "label": _label_from_score(score),
+        "headlines": headlines,
+    }
+
+
+def _analyze_finbert(headlines: list[str]) -> dict[str, Any]:
+    pipeline = _get_finbert()
+    if pipeline is None:
+        return _analyze_vader(headlines)
+
+    results = pipeline(headlines)
+    pos_count = sum(1 for result in results if result["label"] == "positive")
+    neg_count = sum(1 for result in results if result["label"] == "negative")
+    total = len(results)
+    score = (pos_count - neg_count) / total if total > 0 else 0
+    return {
+        "score": round(score, 2),
+        "label": _label_from_score(score),
+        "headlines": headlines,
+    }
+
+
+def get_sentiment(ticker: str) -> dict[str, Any]:
+    """Fetch news and analyze sentiment using VADER (default) or FinBERT."""
     try:
-        stock = yf.Ticker(ticker)
-        news = stock.news[:5] # Get latest 5 news items
-        
-        if not news:
-            return {"score": 0, "label": "Neutral", "headlines": []}
-            
-        # Robustly extract titles, handling different possible yfinance news structures
-        headlines = []
-        for item in news:
-            title = item.get('title') or item.get('text') or ""
-            if title:
-                headlines.append(title)
-        
+        headlines = _extract_headlines(ticker)
         if not headlines:
             return {"score": 0, "label": "Neutral", "headlines": []}
-        
-        # Analyze sentiment for each headline
-        results = sentiment_pipeline(headlines)
-        
-        # Calculate aggregate score
-        pos_count = 0
-        neg_count = 0
-        
-        for res in results:
-            if res['label'] == 'positive':
-                pos_count += 1
-            elif res['label'] == 'negative':
-                neg_count += 1
-                
-        total = len(results)
-        score = (pos_count - neg_count) / total if total > 0 else 0
-        
-        label = "Neutral"
-        if score > 0.2:
-            label = "Positive"
-        elif score < -0.2:
-            label = "Negative"
-            
-        return {
-            "score": round(score, 2),
-            "label": label,
-            "headlines": headlines
-        }
-    except Exception as e:
-        print(f"Error in sentiment analysis for {ticker}: {e}")
+
+        if _sentiment_backend() == "finbert":
+            return _analyze_finbert(headlines)
+        return _analyze_vader(headlines)
+    except Exception as exc:
+        print(f"Error in sentiment analysis for {ticker}: {exc}")
         return {"score": 0, "label": "Neutral", "headlines": []}

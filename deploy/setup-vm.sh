@@ -43,7 +43,7 @@ source venv/bin/activate
 echo "==> Installing dependencies (CPU-only PyTorch for smaller footprint)..."
 pip install --upgrade pip
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -r requirements.txt
+pip install -r requirements-local.txt
 
 if [[ ! -f "$APP_DIR/backend/.env" ]]; then
   cp "$APP_DIR/backend/.env.example" "$APP_DIR/backend/.env"

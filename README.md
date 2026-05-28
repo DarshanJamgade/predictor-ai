@@ -37,7 +37,7 @@ An AI-powered trading copilot that combines technical analysis, fundamental scor
 - **Valuation label:** Undervalued, Fairly Valued, or Overvalued
 
 ### Sentiment & Market Data
-- FinBERT-powered news sentiment from latest headlines
+- News sentiment from latest headlines (VADER on Vercel; FinBERT on VM/local)
 - Smart ticker search with NSE/BSE auto-resolution (e.g. type `TCS` or `RELIANCE`)
 - Localized currency (INR / USD)
 - Day change and last-updated timestamp
@@ -55,7 +55,7 @@ An AI-powered trading copilot that combines technical analysis, fundamental scor
 
 | Layer | Technologies |
 |-------|--------------|
-| **Backend** | FastAPI, uvicorn, yfinance, pandas, pandas-ta, scikit-learn, transformers (FinBERT), PyTorch |
+| **Backend** | FastAPI, uvicorn, yfinance, pandas, pandas-ta, scikit-learn, vaderSentiment (Vercel) / FinBERT + PyTorch (VM) |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, Recharts, Axios, Lucide React |
 
 ---
@@ -92,7 +92,7 @@ npm run dev
 
 Then open **http://localhost:5173** in your browser.
 
-> First startup may take longer while FinBERT downloads (~400MB). Subsequent API responses are cached for 5 minutes.
+> First startup on a VM may take longer while FinBERT downloads (~400MB). Vercel uses lightweight VADER sentiment instead. Subsequent API responses are cached for 5 minutes.
 
 ---
 
@@ -217,7 +217,7 @@ Predictor/
 1. **Fetch** market data, news, and fundamentals from yfinance
 2. **Calculate** 15+ technical indicators and detect chart/candlestick patterns
 3. **Train** a Random Forest model (temporal split) for 5-day direction probability
-4. **Score** sentiment (FinBERT) and fundamentals independently
+4. **Score** sentiment (VADER or FinBERT) and fundamentals independently
 5. **Combine** all signals into a composite recommendation
 6. **Compute** entry zones, stop loss, targets, and risk/reward
 7. **Reject** setups with poor R:R or conflicting high-volatility signals (Avoid)
@@ -225,7 +225,23 @@ Predictor/
 
 ---
 
-## Deployment (Vercel + VM)
+## Deployment
+
+### Option A — Full stack on Vercel (frontend + backend)
+
+Root `vercel.json` uses `experimentalServices`. The backend uses **VADER** sentiment (not FinBERT) to stay under Vercel’s 500 MB Lambda limit.
+
+1. Push to GitHub and import at [vercel.com/new](https://vercel.com/new).
+2. Set project **Framework Preset** to **Services**.
+3. Add environment variable for the frontend service:
+
+   | Name | Value |
+   |------|-------|
+   | `VITE_API_URL` | `/_/backend` |
+
+4. Deploy.
+
+### Option B — Vercel frontend + VM backend (FinBERT)
 
 **Frontend** → [Vercel](https://vercel.com) (free)  
 **Backend** → Oracle Cloud / GCP / any Linux VM (free tiers work)

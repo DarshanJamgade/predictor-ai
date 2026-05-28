@@ -9,7 +9,9 @@
           "root": "backend",
           "routePrefix": "/_/backend",
           "framework": "fastapi",
-          "entrypoint": "main.py"
+          "entrypoint": "main.py",
+          "maxDuration": 60,
+          "excludeFiles": ["venv/**", "**/__pycache__/**", "**/*.pyc"]
       }
   }
 }
