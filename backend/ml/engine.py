@@ -90,14 +90,14 @@ def get_prediction(
     fundamentals: Optional[dict[str, Any]] = None,
 ) -> Optional[dict[str, Any]]:
     """Advanced AI prediction with multi-factor recommendation engine."""
-    from ml.fundamentals import score_fundamentals
-    from ml.indicators import calculate_indicators, compute_trend_strength, get_indicator_snapshot
-    from ml.patterns import collect_pattern_analysis
-    from ml.recommendation import generate_recommendation
-    from ml.trade_levels import compute_trade_levels
-    from services.data_service import download_history
-
     try:
+        from ml.fundamentals import score_fundamentals
+        from ml.indicators import calculate_indicators, compute_trend_strength, get_indicator_snapshot
+        from ml.patterns import collect_pattern_analysis
+        from ml.recommendation import generate_recommendation
+        from ml.trade_levels import compute_trade_levels
+        from services.data_service import download_history
+
         settings = get_settings()
         df = download_history(ticker, period="2y", interval="1d")
 

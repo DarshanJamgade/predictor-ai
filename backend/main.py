@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
+from core.json_utils import to_json_safe
 from services.cache import TTLCache
 
 settings = get_settings()
@@ -53,29 +54,33 @@ def _build_stock_payload(ticker: str) -> dict:
         info.get("currentPrice")
         or info.get("regularMarketPrice")
         or (history[-1]["close"] if history else 0)
+        or 0
     )
-    day_change = compute_day_change(history, float(current_price))
+    current_price = float(current_price)
+    day_change = compute_day_change(history, current_price)
 
-    return {
-        "ticker": final_ticker,
-        "displayTicker": ticker.upper(),
-        "exchange": exchange,
-        "name": info.get("longName", ticker),
-        "currentPrice": current_price,
-        "currency": currency,
-        "currencySymbol": currency_symbol,
-        "dayChange": day_change,
-        "summary": info.get("longBusinessSummary", ""),
-        "history": history,
-        "prediction": prediction,
-        "sentiment": sentiment,
-        "fundamentals": fundamentals,
-        "meta": {
-            "lastUpdated": datetime.now(timezone.utc).isoformat(),
-            "dataSource": "yfinance",
-            "disclaimer": "For informational purposes only. Not financial advice.",
-        },
-    }
+    return to_json_safe(
+        {
+            "ticker": final_ticker,
+            "displayTicker": ticker.upper(),
+            "exchange": exchange,
+            "name": info.get("longName", ticker),
+            "currentPrice": current_price,
+            "currency": currency,
+            "currencySymbol": currency_symbol,
+            "dayChange": day_change,
+            "summary": info.get("longBusinessSummary", ""),
+            "history": history,
+            "prediction": prediction,
+            "sentiment": sentiment,
+            "fundamentals": fundamentals,
+            "meta": {
+                "lastUpdated": datetime.now(timezone.utc).isoformat(),
+                "dataSource": "yfinance",
+                "disclaimer": "For informational purposes only. Not financial advice.",
+            },
+        }
+    )
 
 
 @app.get("/")

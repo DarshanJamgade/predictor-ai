@@ -2,6 +2,8 @@ import yfinance as yf
 import pandas as pd
 from typing import Any, Optional
 
+from core.json_utils import to_json_safe
+
 
 def resolve_ticker(search_ticker: str) -> tuple[Optional[dict], Optional[str]]:
     """Resolve ticker across NSE, BSE, and global markets."""
@@ -14,46 +16,55 @@ def resolve_ticker(search_ticker: str) -> tuple[Optional[dict], Optional[str]]:
             stock = yf.Ticker(variant)
             info = stock.info
             if info and (
-                "regularMarketPrice" in info
-                or "currentPrice" in info
-                or "longName" in info
+                info.get("regularMarketPrice") is not None
+                or info.get("currentPrice") is not None
+                or info.get("longName")
             ):
                 return info, variant
-        except Exception:
+        except Exception as exc:
+            print(f"resolve_ticker failed for {variant}: {exc}")
             continue
     return None, None
 
 
 def download_history(ticker: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
-    df = yf.download(ticker, period=period, interval=interval, progress=False)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df
+    try:
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df
+    except Exception as exc:
+        print(f"download_history failed for {ticker}: {exc}")
+        return pd.DataFrame()
 
 
 def fetch_chart_history(ticker: str, period: str = "1y") -> list[dict[str, Any]]:
-    stock = yf.Ticker(ticker)
-    history = stock.history(period=period)
-    if history.empty:
+    try:
+        stock = yf.Ticker(ticker)
+        history = stock.history(period=period)
+        if history.empty:
+            return []
+
+        if isinstance(history.columns, pd.MultiIndex):
+            history.columns = history.columns.get_level_values(0)
+
+        records = []
+        for date, row in history.iterrows():
+            records.append(
+                {
+                    "date": date.strftime("%Y-%m-%d"),
+                    "open": round(float(row["Open"]), 2),
+                    "high": round(float(row["High"]), 2),
+                    "low": round(float(row["Low"]), 2),
+                    "close": round(float(row["Close"]), 2),
+                    "volume": int(row["Volume"]) if pd.notna(row["Volume"]) else 0,
+                    "price": round(float(row["Close"]), 2),
+                }
+            )
+        return records
+    except Exception as exc:
+        print(f"fetch_chart_history failed for {ticker}: {exc}")
         return []
-
-    if isinstance(history.columns, pd.MultiIndex):
-        history.columns = history.columns.get_level_values(0)
-
-    records = []
-    for date, row in history.iterrows():
-        records.append(
-            {
-                "date": date.strftime("%Y-%m-%d"),
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]) if pd.notna(row["Volume"]) else 0,
-                "price": round(float(row["Close"]), 2),
-            }
-        )
-    return records
 
 
 def compute_day_change(history: list[dict[str, Any]], current_price: float) -> dict[str, Any]:
@@ -71,7 +82,7 @@ def compute_day_change(history: list[dict[str, Any]], current_price: float) -> d
 
 
 def map_fundamentals(info: dict) -> dict[str, Any]:
-    return {
+    raw = {
         "pe_ratio": info.get("forwardPE") or info.get("trailingPE"),
         "pb_ratio": info.get("priceToBook"),
         "eps": info.get("forwardEps") or info.get("trailingEps"),
@@ -88,6 +99,7 @@ def map_fundamentals(info: dict) -> dict[str, Any]:
         "operating_margin": info.get("operatingMargins"),
         "earnings_growth": info.get("earningsGrowth"),
     }
+    return {key: to_json_safe(value) for key, value in raw.items()}
 
 
 def get_currency_meta(info: dict, ticker: str) -> tuple[str, str, str]:

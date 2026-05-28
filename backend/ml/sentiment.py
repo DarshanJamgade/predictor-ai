@@ -19,9 +19,13 @@ def _sentiment_backend() -> str:
 def _get_vader():
     global _vader_analyzer
     if _vader_analyzer is None:
-        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+        try:
+            from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-        _vader_analyzer = SentimentIntensityAnalyzer()
+            _vader_analyzer = SentimentIntensityAnalyzer()
+        except ImportError as exc:
+            print(f"VADER unavailable: {exc}")
+            return None
     return _vader_analyzer
 
 
@@ -67,6 +71,9 @@ def _label_from_score(score: float) -> str:
 
 def _analyze_vader(headlines: list[str]) -> dict[str, Any]:
     analyzer = _get_vader()
+    if analyzer is None:
+        return {"score": 0, "label": "Neutral", "headlines": headlines}
+
     scores = [analyzer.polarity_scores(headline)["compound"] for headline in headlines]
     score = sum(scores) / len(scores) if scores else 0.0
     return {
