@@ -1,6 +1,19 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+function resolveApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '');
+  const isLocalhost =
+    configured?.includes('localhost') || configured?.includes('127.0.0.1');
+
+  // Ignore localhost URLs in production builds (common misconfiguration on Vercel).
+  if (configured && !(import.meta.env.PROD && isLocalhost)) {
+    return configured;
+  }
+
+  return import.meta.env.PROD ? '/_/backend' : 'http://localhost:8080';
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 export interface StockHistory {
   date: string;
