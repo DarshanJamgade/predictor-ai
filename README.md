@@ -232,17 +232,59 @@ Predictor/
 
 ### 1. Deploy backend on a VM
 
-On an Ubuntu VM (SSH in after creating the instance):
+> **Do not run `setup-vm.sh` on Windows.** That script is for Linux only. Run it **after SSH-ing into your cloud VM** (Oracle, GCP, etc.) — not in Git Bash on your PC.
+
+**A. Create a free Oracle Cloud VM** (step-by-step)
+
+1. **Sign up** at [oracle.com/cloud/free](https://www.oracle.com/cloud/free/) (credit card required for verification; Always Free resources stay $0).
+
+2. **Create an SSH key on your PC** (Git Bash on Windows):
+   ```bash
+   mkdir -p ~/.ssh
+   ssh-keygen -t rsa -b 4096 -f ~/.ssh/oracle-predictor -N ""
+   ```
+   You'll upload `~/.ssh/oracle-predictor.pub` to Oracle.
+
+3. **Create the VM** in Oracle Console:
+   - Menu → **Compute** → **Instances** → **Create instance**
+   - Name: `predictor-api`
+   - Image: **Ubuntu 22.04**
+   - Shape: **Ampere** → `VM.Standard.A1.Flex` → **4 OCPU, 12 GB RAM** (fits FinBERT; stays Always Free)
+   - Networking: use default VCN
+   - **Add SSH keys** → paste contents of `oracle-predictor.pub`
+   - Click **Create**
+
+4. **Open port 8080** (required — API won't be reachable without this):
+   - Menu → **Networking** → **Virtual cloud networks** → your VCN
+   - Click your **Security List** → **Add Ingress Rules**:
+     - Source CIDR: `0.0.0.0/0`
+     - IP Protocol: TCP
+     - Destination port: `8080`
+   - Save
+
+5. **Copy the public IP** from the instance details page (e.g. `129.xxx.xxx.xxx`).
+
+**B. SSH from your PC into the VM**
 
 ```bash
-git clone https://github.com/YOUR_USER/Predictor.git
-cd Predictor
+# Windows Git Bash — fix key permissions first
+chmod 600 ~/.ssh/oracle-predictor
+ssh -i ~/.ssh/oracle-predictor ubuntu@YOUR_VM_PUBLIC_IP
+```
+
+If `ubuntu` fails, try `opc@YOUR_VM_PUBLIC_IP` (some Oracle images use `opc`).
+
+**C. On the VM** (Linux shell — you'll see `ubuntu@...` not `MINGW64`):
+
+```bash
+git clone https://github.com/DarshanJamgade/predictor-ai.git
+cd predictor-ai
 cp backend/.env.example backend/.env
-# Edit backend/.env — set CORS_ORIGINS to your Vercel URL
+nano backend/.env   # set CORS_ORIGINS=https://predictor-ai-frontend.vercel.app
 sudo bash deploy/setup-vm.sh
 ```
 
-Verify:
+Verify (from your PC or on the VM):
 
 ```bash
 curl http://YOUR_VM_IP:8080/
